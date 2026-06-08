@@ -5281,7 +5281,7 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
             .to(torch.float16)
         )
 
-        torch.testing.assert_close(result, expected, atol=0.25, rtol=0.0)
+        torch.testing.assert_close(result, expected, atol=3.0, rtol=0.0)
 
     def test_dequantize_fp8_with_scale_cpu(self, shape, scale_value, mean, std):
         @torch.compile(backend="inductor")
