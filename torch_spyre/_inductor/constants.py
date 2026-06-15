@@ -20,6 +20,7 @@ BATCH_MATMUL_FP8_OP = "batchmatmulfp8"
 # Type casting operators from deeptools
 DL16TOFP32_OP = "dl16tofp32"
 FP32TODL16_OP = "fp32todl16"
+FP8TODL16_OP = "fp8todl16"
 
 DEVICE_NAME = "spyre"
 
@@ -83,6 +84,19 @@ SPYRE_FP32_OPS = [
     "maximum",
     "minimum",
 ]
+
+# FP8 operations that support FP8 dtypes (SEN143_FP8, SEN152_FP8)
+SPYRE_FP8_OPS = {
+    "qfp8ch",  # Channel-wise FP8 quantization
+    "qfp8wt",  # Weight FP8 quantization (no padding)
+    "quantize_fp8_with_scale",  # FP8 quantization with scaling
+    "quantize_weight_fp8_with_scale",  # FP8 weight quantization with scaling
+    "dequantize_fp8_with_scale",  # FP8 dequantization with scaling
+    "fp8todl16",  # FP8 to FP16 conversion
+    "reciprocal",  # Used in quantize_fp8_with_scale
+    "realdiv",  # Used in quantize_fp8_with_scale
+    "mul",  # Used in quantize/dequantize pipelines
+}
 
 TOPK_OPS = {"topkvalue", "topkindex"}
 

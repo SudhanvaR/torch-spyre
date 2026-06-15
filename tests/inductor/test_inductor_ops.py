@@ -22,6 +22,7 @@ from utils_inductor import (
     cached_randn,
     cached_xavier,
     compare_with_cpu,
+    compare_with_pytorch,
     make_param_dict,
     unique_randn_along_dim,
     shapes2key,
@@ -289,7 +290,7 @@ TO_DTYPE_OP_PARAMS_SETS = {
     )
     for src, dst in DtypeOpTable.get_dtype_pairs()
     for shape in TO_DTYPE_OP_SHAPES
-    if src != torch.bool and dst != torch.bool
+    if src not in (torch.bool, torch.float8_e4m3fn) and dst != torch.bool
 }
 
 
@@ -4071,6 +4072,45 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
                 "4d_dim3": (3, cached_randn((2, 4, 8, 64))),
             },
         },
+        (
+            "test_fp8_weight_quantization_roundtrip",
+            "test_fp8_weight_quantization_roundtrip",
+        ): {
+            "param_sets": {
+                "shape_128_128_scale_0.01": (
+                    cached_randn((128, 128), dtype=torch.float16),
+                    torch.tensor([0.01], dtype=torch.float16),
+                ),
+                "shape_4096_1024_scale_0.1": (
+                    cached_randn((4096, 1024), dtype=torch.float16),
+                    torch.tensor([0.1], dtype=torch.float16),
+                ),
+            },
+        },
+        ("test_dequantize_fp8_with_scale", "test_dequantize_fp8_with_scale_cpu"): {
+            "param_sets": {
+                "shape_1_128_512_scale_0.01": (
+                    cached_randn((1, 128, 512), dtype=torch.float16),
+                    torch.tensor([0.01], dtype=torch.float16),
+                ),
+                "shape_4_128_512_scale_0.1": (
+                    cached_randn((4, 128, 512), dtype=torch.float16),
+                    torch.tensor([0.1], dtype=torch.float16),
+                ),
+                "shape_1_128_1024_scale_0.5": (
+                    cached_randn((1, 128, 1024), dtype=torch.float16),
+                    torch.tensor([0.5], dtype=torch.float16),
+                ),
+                "shape_1_128_2048_scale_1.0": (
+                    cached_randn((1, 128, 2048), dtype=torch.float16),
+                    torch.tensor([1.0], dtype=torch.float16),
+                ),
+                "shape_1_128_4096_scale_2.0": (
+                    cached_randn((1, 128, 4096), dtype=torch.float16),
+                    torch.tensor([2.0], dtype=torch.float16),
+                ),
+            },
+        },
     }
 
     def __init__(self, *args, **kwargs):
@@ -5527,6 +5567,30 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
             atol=0.5,
             rtol=0.1,
         )
+
+    def test_dequantize_fp8_with_scale_cpu(self, x, scale):
+        def spyre_fn(x, scale):
+            x_fp8 = torch.ops.spyre.quantize_fp8_with_scale(x, scale)
+            return torch.ops.spyre.dequantize_fp8_with_scale(x_fp8, scale)
+
+        def pytorch_fn(x, scale):
+            return (x / scale).clamp(-448.0, 448.0).to(torch.float8_e4m3fn).to(
+                torch.float16
+            ) * scale
+
+        compare_with_pytorch(spyre_fn, pytorch_fn, x, scale, atol=0.5, rtol=0.1)
+
+    def test_fp8_weight_quantization_roundtrip(self, x, scale):
+        def spyre_fn(x, scale):
+            x_fp8 = torch.ops.spyre.quantize_weight_fp8_with_scale(x, scale)
+            return torch.ops.spyre.dequantize_fp8_with_scale(x_fp8, scale)
+
+        def pytorch_fn(x, scale):
+            return (x / scale).clamp(-448.0, 448.0).to(torch.float8_e4m3fn).to(
+                torch.float16
+            ) * scale
+
+        compare_with_pytorch(spyre_fn, pytorch_fn, x, scale, atol=0.5, rtol=0.1)
 
     @pytest.mark.filterwarnings("ignore::torch_spyre.ops.fallbacks.FallbackWarning")
     def test_index_copy_cpu(self):
