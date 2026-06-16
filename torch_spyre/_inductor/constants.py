@@ -85,16 +85,10 @@ SPYRE_FP32_OPS = [
     "minimum",
 ]
 
-# FP8 operations that support FP8 dtypes (SEN143_FP8, SEN152_FP8)
+# Operations that directly handle FP8 dtypes (SEN143_FP8)
 SPYRE_FP8_OPS = {
-    "qfp8ch",  # Channel-wise FP8 quantization
-    "quantize_fp8_with_scale",  # FP8 quantization with scaling
-    "quantize_weight_fp8_with_scale",  # FP8 weight quantization with scaling
-    "dequantize_fp8_with_scale",  # FP8 dequantization with scaling
-    "fp8todl16",  # FP8 to FP16 conversion
-    "reciprocal",  # Used in quantize_fp8_with_scale
-    "realdiv",  # Used in quantize_fp8_with_scale
-    "mul",  # Used in quantize/dequantize pipelines
+    "qfp8ch",  # Channel-wise FP8 quantization (output: FP8)
+    "fp8todl16",  # FP8 to FP16 conversion (input: FP8)
 }
 
 TOPK_OPS = {"topkvalue", "topkindex"}
