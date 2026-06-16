@@ -45,8 +45,6 @@ enum class ElementArrangement {
                  // quantization (qfp8ch)
   EXX2,          // reduction mode: two values per stick (vs. one for standard
                  // reductions)
-  QFP8WT,        // non-sequential order and multiple dimensions in the stick
-                 // produced by on-device fp8 weight quantization (qfp8wt)
 };
 
 class SpyreTensorLayout {

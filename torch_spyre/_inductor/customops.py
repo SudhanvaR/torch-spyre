@@ -652,14 +652,3 @@ def quantize_weight_fp8_with_scale(
 def _(input: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     # Output is FP8 with same shape as input
     return torch.empty(input.size(), dtype=torch.float8_e4m3fn, device=input.device)
-
-
-@torch.library.custom_op("spyre::qfp8wt", mutates_args=(), device_types="spyre")
-def qfp8wt(input: torch.Tensor) -> torch.Tensor:
-    pass
-
-
-@qfp8wt.register_fake
-def _(input: torch.Tensor) -> torch.Tensor:
-    # Output is FP8 with same shape as input
-    return torch.empty(input.size(), dtype=torch.float8_e4m3fn, device=input.device)
