@@ -311,6 +311,10 @@ class SpyreOpFuncs:
         return PointwiseOp("reciprocal", [x])
 
     @staticmethod
+    def qfp8wt(x):
+        return PointwiseOp("qfp8wt", [x])
+
+    @staticmethod
     def relu(x):
         return PointwiseOp("relufwd", [x])
 
