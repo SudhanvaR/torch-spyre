@@ -84,6 +84,12 @@ SPYRE_FP32_OPS = [
     "minimum",
 ]
 
+# Operations that directly handle FP8 dtypes (SEN143_FP8)
+SPYRE_FP8_OPS = {
+    "batchmatmulfp8",  # FP8 bmm (inputs: FP8)
+    "qfp8wt",  # FP8 quantization (output: FP8)
+}
+
 TOPK_OPS = {"topkvalue", "topkindex"}
 
 LAYOUT_LABELS = ["OUTPUT", "KERNEL", "INPUT", "KERNEL_IDX"]
