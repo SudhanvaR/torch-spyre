@@ -409,6 +409,8 @@ def _create_sdsc_tensors(
     sdsc_args: list[SDSCArgs] = []
 
     for i, arg in enumerate(op_spec.args):
+        is_fp8_mm_kernel_arg = arg.element_arrangement == ElementArrangement.QFP8WT
+
         # Step 1: Determine dimension order and stick dimension.
         # Index tensors use their pre-computed layout (their coords have no IndirectAccess).
         if has_indirect_access and i in index_tensor_layouts:
@@ -498,8 +500,17 @@ def _create_sdsc_tensors(
             offsets[mb_sym] = 0
             max_dim_sizes[mb_sym] = -1
 
-        effective_stick = op_stick_dim if stick_dim is None else stick_dim
+        effective_stick = [op_stick_dim if stick_dim is None else stick_dim]
         layout_labels = MATMUL_LAYOUT_LABELS if not use_op_dims else LAYOUT_LABELS
+
+        # Special handling for FP8 matmul KERNEL tensor
+        dtype_stick_size = arg.device_dtype.elems_per_stick()
+        layout_stick_size = [dtype_stick_size]
+        if is_fp8_mm_kernel_arg:
+            # FP8 KERNEL needs 2D stick: [2, stick_size/2]
+            layout_stick_size = [2, dtype_stick_size // 2]
+            # Use the last two dimensions from dim_order for 2D stick
+            effective_stick = dim_order[-2:]
 
         if has_indirect_access:
             label = get_indirect_layout_label(
@@ -508,7 +519,7 @@ def _create_sdsc_tensors(
                 layouts,
                 dim_order,
                 effective_stick,
-                arg.device_dtype.elems_per_stick(),
+                layout_stick_size,
                 layout_labels,
                 _get_layout_label,
                 logger,
@@ -518,7 +529,7 @@ def _create_sdsc_tensors(
                 layouts,
                 dim_order,
                 effective_stick,
-                arg.device_dtype.elems_per_stick(),
+                layout_stick_size,
                 layout_labels,
             )
 
