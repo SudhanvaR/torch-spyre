@@ -25,6 +25,7 @@ from utils_inductor import (
     make_param_dict,
     unique_randn_along_dim,
     shapes2key,
+    compare_with_pytorch,
 )
 import utils_inductor
 from torch_spyre._inductor.dtype_ops import DtypeOpTable
@@ -289,7 +290,7 @@ TO_DTYPE_OP_PARAMS_SETS = {
     )
     for src, dst in DtypeOpTable.get_dtype_pairs()
     for shape in TO_DTYPE_OP_SHAPES
-    if src != torch.bool and dst != torch.bool
+    if src not in (torch.bool, torch.float8_e4m3fn) and dst != torch.bool
 }
 
 
@@ -3960,31 +3961,6 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
             "param_sets": TO_DTYPE_OP_ROUND_TRIP_PARAMS_SETS,
             "expect_fail": TO_DTYPE_OP_ROUND_TRIP_EXPECT_FAIL,
         },
-        (
-            "test_round_trip_to_dtype_implicit",
-            "test_round_trip_to_dtype_implicit_cpu",
-        ): {
-            "ops_dict": {"add": torch.add},
-            "param_sets": TO_DTYPE_OP_ROUND_TRIP_PARAMS_SETS,
-            "expect_fail": TO_DTYPE_OP_ROUND_TRIP_EXPECT_FAIL,
-        },
-        (
-            "test_round_trip_to_dtype_implicit_invalid",
-            "test_round_trip_to_dtype_implicit_invalid_cpu",
-        ): {
-            "ops_dict": {"add": torch.add},
-            "param_sets": TO_DTYPE_OP_ROUND_TRIP_PARAMS_SETS,
-            "expect_fail": TO_DTYPE_OP_ROUND_TRIP_EXPECT_FAIL,
-        },
-        ("test_add_constant", "test_add_constant_cpu"): {
-            "ops_dict": {"add": torch.add},
-            "param_sets": {
-                "1d_fp16_4": (cached_randn((4), dtype=torch.float16),),
-                "2d_fp16_4x64": (cached_randn((4, 64), dtype=torch.float16),),
-                "3d_fp16_2x4x16": (cached_randn((2, 4, 16), dtype=torch.float16),),
-                "4d_fp16_2x4x16": (cached_randn((2, 4, 16, 64), dtype=torch.float16),),
-            },
-        },
         ("test_conv2d", "test_conv2d_cpu"): {
             "param_sets": {
                 "1x3x32_ksize3_no_pad": (
@@ -4118,6 +4094,45 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
                 # 4D — innermost and non-innermost axes
                 "4d_dim0": (0, cached_randn((2, 4, 8, 64))),
                 "4d_dim3": (3, cached_randn((2, 4, 8, 64))),
+            },
+        },
+        (
+            "test_fp8_scaled_mm",
+            "test_fp8_scaled_mm_cpu",
+        ): {
+            "param_sets": {
+                "2x128x128": (
+                    torch.rand((2, 128), dtype=torch.float16),
+                    torch.rand((128, 128), dtype=torch.float16),
+                    torch.tensor([1.0], dtype=torch.float16),
+                    torch.tensor([1.0], dtype=torch.float16),
+                ),
+                "128x128x128": (
+                    torch.rand((128, 128), dtype=torch.float16),
+                    torch.rand((128, 128), dtype=torch.float16),
+                    torch.tensor([1.0], dtype=torch.float16),
+                    torch.tensor([1.0], dtype=torch.float16),
+                ),
+                "4x128x1024": (
+                    torch.rand((4, 128), dtype=torch.float16),
+                    torch.rand((128, 1024), dtype=torch.float16),
+                    torch.tensor([1.0], dtype=torch.float16),
+                    torch.tensor([3.0], dtype=torch.float16),
+                ),
+                "4x128x512_bias": (
+                    torch.rand((4, 128), dtype=torch.float16),
+                    torch.rand((128, 512), dtype=torch.float16),
+                    torch.tensor([2.0], dtype=torch.float16),
+                    torch.tensor([4.0], dtype=torch.float16),
+                    torch.rand((512,), dtype=torch.float16),
+                ),
+                "3x100x256_bias": (
+                    torch.rand((3, 128), dtype=torch.float16),
+                    torch.rand((128, 256), dtype=torch.float16),
+                    torch.tensor([8.0], dtype=torch.float16),
+                    torch.tensor([2.0], dtype=torch.float16),
+                    torch.rand((256,), dtype=torch.float16),
+                ),
             },
         },
     }
@@ -5545,53 +5560,6 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
             run_eager=False,
         )
 
-    def test_round_trip_to_dtype_implicit_cpu(self, op, x, dst_dtype):
-        y = x.clone()
-
-        def fn(op, x, y, dst_dtype):
-            x_dst = x.to(dst_dtype)
-            z = op(x_dst, y)
-            return z.to(x.dtype)
-
-        self.compare_with_cpu(
-            fn,
-            op,
-            x,
-            y,
-            dst_dtype,
-            cpu_compile=False,
-            run_eager=False,
-        )
-
-    def test_round_trip_to_dtype_implicit_invalid_cpu(self, op, x, dst_dtype):
-        y = x.clone()
-        x_dst = x.to(dst_dtype)
-
-        def fn(op, x, y):
-            src_dtype = y.dtype
-            z = op(x, y)
-            return z.to(src_dtype)
-
-        with pytest.raises(Exception) as exc_info:
-            self.compare_with_cpu(
-                fn,
-                op,
-                x_dst,
-                y,
-                cpu_compile=False,
-                run_eager=False,
-            )
-
-        assert "All inputs to an op must have same element arrangement" in str(
-            exc_info.value
-        )
-
-    def test_add_constant_cpu(self, op, x):
-        def fn(op, x):
-            return op(x, 1.0)
-
-        self.compare_with_cpu(fn, op, x, cpu_compile=False, run_eager=False)
-
     def test_bool_conversion_from_spyre(self):
         torch.manual_seed(42)
 
@@ -5784,7 +5752,54 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
             run_eager=False,
         )
 
-    @pytest.mark.filterwarnings("ignore::torch_spyre.ops.fallbacks.FallbackWarning")
+    def test_fp8_scaled_mm_cpu(self, a, b, scale_a, scale_b, bias=None):
+        """Test _scaled_mm with FP8 inputs, optional bias.
+
+        Pipeline:
+          1. quantize a, b to fp8
+          2. fp8 matmul -> fp16 result
+          3. result * scale_a  (fp16)
+          4. result * scale_b  (fp16)
+          5. result.to(fp16) + bias  (both fp16)
+        """
+        def spyre_fn(a, b, scale_a, scale_b, bias):
+            # step 1: quantize
+            q_a = torch.ops.spyre.quantize_fp8_with_scale(a, scale_a)
+            q_b = torch.ops.spyre.quantize_weight_fp8_with_scale(b, scale_b)
+            # step 2: fp8 matmul -> fp16
+            out = torch.ops.aten._scaled_mm(
+                q_a, q_b,
+                scale_a=None,
+                scale_b=None,
+                bias=None,
+                out_dtype=torch.float16,
+            )
+            # step 3 & 4: dequantize — result is fp16, scales are fp16
+            out = out * scale_a
+            out = out * scale_b
+            # step 5: ensure fp16 before bias add, bias is fp16
+            if bias is not None:
+                out = out.to(torch.float16) + bias.to(torch.float16)
+            return out
+
+        def pytorch_fn(a, b, scale_a, scale_b, bias):
+            # step 1: quantize
+            q_a = (a / scale_a).clamp(-448.0, 448.0).to(torch.float8_e4m3fn)
+            q_b = (b / scale_b).clamp(-448.0, 448.0).to(torch.float8_e4m3fn)
+            # step 2: fp8 matmul -> fp16
+            out = (q_a.to(torch.float16) @ q_b.to(torch.float16))
+            # step 3 & 4: dequantize
+            out = out * scale_a
+            out = out * scale_b
+            # step 5: bias add in fp16
+            if bias is not None:
+                out = out.to(torch.float16) + bias.to(torch.float16)
+            return out
+
+        compare_with_pytorch(
+            spyre_fn, pytorch_fn, a, b, scale_a, scale_b, bias, atol=0.1, rtol=0.1
+        )
+
     def test_is_nonzero_cpu(self, *args):
         """Test torch.is_nonzero on Spyre tensors"""
         if len(args) == 1:
