@@ -264,16 +264,16 @@ def lower_scaled_mm(
     out_dtype=None,
     use_fast_accum=False,
 ):
-    if scale_a is not None:
-        raise Unsupported("scale_a parameter in _scaled_mm is not yet supported")
-    if scale_b is not None:
-        raise Unsupported("scale_b parameter in _scaled_mm is not yet supported")
-    if bias is not None:
-        raise Unsupported("bias parameter in _scaled_mm is not yet supported")
-    if scale_result is not None:
-        raise Unsupported("scale_result parameter in _scaled_mm is not yet supported")
-    if use_fast_accum:
-        raise Unsupported("use_fast_accum parameter in _scaled_mm is not yet supported")
+    # if scale_a is not None:
+    #     raise Unsupported("scale_a parameter in _scaled_mm is not yet supported")
+    # if scale_b is not None:
+    #     raise Unsupported("scale_b parameter in _scaled_mm is not yet supported")
+    # if bias is not None:
+    #     raise Unsupported("bias parameter in _scaled_mm is not yet supported")
+    # if scale_result is not None:
+    #     raise Unsupported("scale_result parameter in _scaled_mm is not yet supported")
+    # if use_fast_accum:
+    #     raise Unsupported("use_fast_accum parameter in _scaled_mm is not yet supported")
 
     mat1.realize()
     mat2.realize()
@@ -1191,6 +1191,32 @@ def lower_qfp8ch(x):
     """
 
     fn = lowering.ops_wrapper(torch.ops.spyre.qfp8ch.__name__)
+    x_loader = x.make_loader()
+
+    def inner_fn(index):
+        return fn(x_loader(index))
+
+    pw = Pointwise.create(
+        device=x.get_device(),
+        dtype=torch.float8_e4m3fn,
+        inner_fn=inner_fn,
+        ranges=x.get_size(),
+        origin_node=x.get_origin_node(),
+        traceback=x.get_traceback(),
+    )
+    pw.realize()
+    return pw
+
+
+@register_spyre_lowering(torch.ops.spyre.qfp8wt)
+def lower_qfp8wt(x):
+    """
+    Lower qfp8ch operation - channel-wise FP8 format conversion.
+
+    Pointwise format conversion only (no scaling).
+    """
+
+    fn = lowering.ops_wrapper(torch.ops.spyre.qfp8wt.__name__)
     x_loader = x.make_loader()
 
     def inner_fn(index):

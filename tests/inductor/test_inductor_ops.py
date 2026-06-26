@@ -16,6 +16,7 @@ import pytest
 import unittest
 import torch
 
+
 from utils_inductor import (
     ParameterizedTestMeta,
     _compile_and_run,
@@ -25,6 +26,7 @@ from utils_inductor import (
     make_param_dict,
     unique_randn_along_dim,
     shapes2key,
+    compare_with_pytorch,
 )
 import utils_inductor
 from torch_spyre._inductor.dtype_ops import DtypeOpTable
@@ -319,6 +321,54 @@ TO_DTYPE_OP_ROUND_TRIP_EXPECT_FAIL = [
     f"{_dtype_name(src)}_to_{_dtype_name(dst)}_{shapes2key((shape,))}"
     for src, dst in [(torch.float16, torch.float32)]
     for shape in TO_DTYPE_OP_SHAPES_UNALIGNED
+]
+
+# M x K x N -> [M, K] @ [K, N]
+_SCALED_MM_SHAPES_SUPPORTED = [
+    (128, 128, 128),
+    (1, 128, 128),
+    (1, 128, 100),
+    (2, 128, 100),
+    (2, 128, 128),
+    (3, 128, 128),
+    (4, 128, 1024),
+]
+
+_SCALED_MM_SHAPES_UNSUPPORTED = [
+    # large tensor:
+    # DtException: [distributeElemArrToTemporalLoops] Not enough elements to distribute.
+    (1, 4096, 4096),
+    (2, 4096, 4096),
+    (4, 4096, 4096),
+    # padding on reduction dim:
+    # DtException: Scheduler failed to find a suitable op mapping for sdsc: 0_identity
+    (2, 100, 128),
+    (5, 200, 300),
+]
+
+_SCALED_MM_SHAPES = _SCALED_MM_SHAPES_SUPPORTED + _SCALED_MM_SHAPES_UNSUPPORTED
+
+# scale_a, scale_b, bias
+_SCALED_MM_PARAMS = [
+    (1.0, 1.0, 0.0),
+]
+
+SCALED_MM_TESTS = {
+    f"{shapes2key([shape])}_{sa}_{sb}_{b}": (
+        torch.rand((shape[0], shape[1]), dtype=torch.float16),
+        torch.rand((shape[1], shape[2]), dtype=torch.float16),
+        torch.tensor(sa, dtype=torch.float16),
+        torch.tensor(sb, dtype=torch.float16),
+        torch.tensor(b, dtype=torch.float16),
+    )
+    for shape in _SCALED_MM_SHAPES
+    for sa, sb, b in _SCALED_MM_PARAMS
+}
+
+SCALED_MM_TESTS_EXPECT_FAIL = [
+    f"{shapes2key([shape])}_{sa}_{sb}_{b}"
+    for shape in _SCALED_MM_SHAPES_UNSUPPORTED
+    for sa, sb, b in _SCALED_MM_PARAMS
 ]
 
 FP32_EPS = torch.finfo(torch.float32).eps  # 1.1920928955078125e-07
@@ -4336,6 +4386,10 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
                 "4d_dim3": (3, cached_randn((2, 4, 8, 64))),
             },
         },
+        ("test_fp8_scaled_mm", "test_fp8_scaled_mm_cpu"): {
+            "param_sets": SCALED_MM_TESTS,
+            "expect_fail": SCALED_MM_TESTS_EXPECT_FAIL,
+        },
         (
             "test_multiops_split",
             "test_view_permute_mul",
@@ -6064,7 +6118,25 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
             run_eager=False,
         )
 
-    @pytest.mark.filterwarnings("ignore::torch_spyre.ops.fallbacks.FallbackWarning")
+    def test_fp8_scaled_mm_cpu(self, a, b, scale_a, scale_b, bias):
+        """Test _scaled_mm with FP8 inputs."""
+
+        def spyre_fn(a, b, scale_a, scale_b, bias):
+            q_a = torch.ops.spyre.quantize_fp8_with_scale(a, scale_a)
+            q_b = torch.ops.spyre.quantize_weight_fp8_with_scale(b, scale_b)
+            return torch.ops.aten._scaled_mm(
+                q_a, q_b, scale_a, scale_b, bias=bias, out_dtype=torch.float16
+            )
+
+        def pytorch_fn(a, b, scale_a, scale_b, bias=None):
+            q_a = (a / scale_a).clamp(-448.0, 448.0).to(torch.float8_e4m3fn)
+            q_b = (b / scale_b).clamp(-448.0, 448.0).to(torch.float8_e4m3fn)
+            return (q_a @ q_b).to(torch.float16) * (scale_a * scale_b) + bias
+
+        compare_with_pytorch(
+            spyre_fn, pytorch_fn, a, b, scale_a, scale_b, bias, atol=0.1, rtol=0.1
+        )
+
     def test_is_nonzero_cpu(self, *args):
         """Test torch.is_nonzero on Spyre tensors"""
         if len(args) == 1:

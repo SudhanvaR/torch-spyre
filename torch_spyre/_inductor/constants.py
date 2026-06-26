@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import torch
+
 BATCH_MATMUL_OP = "batchmatmul"
 IDENTITY_OP = "identity"
 RESTICKIFY_OP = "ReStickifyOpHBM"
@@ -85,13 +87,17 @@ SPYRE_FP32_OPS = [
     "minimum",
 ]
 
-# Operations that directly handle FP8 dtypes (SEN143_FP8)
 # FP8 E4M3 numeric limits
-FP8_E4M3_MAX = 448.0
+FP8_E4M3FN_INFO = torch.finfo(torch.float8_e4m3fn)
+FP8_E4M3FN_MAX = float(FP8_E4M3FN_INFO.max)
+FP8_E4M3FN_MIN = float(FP8_E4M3FN_INFO.min)
 
+# Operations that directly handle FP8 dtypes (SEN143_FP8)
 SPYRE_FP8_OPS = {
     "qfp8ch",  # Channel-wise FP8 quantization (output: FP8)
     "fp8todl16",  # FP8 to FP16 conversion (input: FP8)
+    "batchmatmulfp8",  # FP8 bmm (inputs: FP8)
+    "qfp8wt",  # FP8 quantization (output: FP8)
 }
 
 TOPK_OPS = {"topkvalue", "topkindex"}

@@ -19,7 +19,7 @@ import dataclasses
 from typing import Any, Sequence
 
 from sympy import Symbol, Expr, Function
-from torch_spyre._C import DataFormats
+from torch_spyre._C import DataFormats, ElementArrangement
 import torch
 
 
@@ -60,6 +60,9 @@ class TensorArg:
     allocation: Any
     per_tile_fixed: bool = False
     name: str | None = None
+    element_arrangement: ElementArrangement = dataclasses.field(
+        default_factory=lambda: ElementArrangement.STANDARD
+    )
 
 
 @dataclasses.dataclass
