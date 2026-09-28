@@ -70,6 +70,7 @@ from torch_spyre._inductor.work_division import (
     _default_split,
     _HBM_BW_GBS,
     _matmul_split_cost,
+    adjust_it_space_for_sticks,
     enumerate_work_division_candidates,
     work_division_context_for_op,
     work_division_splits_are_legal,
@@ -1328,8 +1329,10 @@ class TestCostModelConstraints(unittest.TestCase):
                 dtype=torch.float8_e4m3fn,
             ),
         ]
-        # n, k measured in FP8 sticks (128 elems/stick): 12800/128=100, 4096/128=32.
-        it_space_adjusted = {m: 8, n: 100, k: 32}
+        it_space = {m: 8, n: 12800, k: 4096}
+        it_space_adjusted, stick_vars = adjust_it_space_for_sticks(
+            it_space, input_tds + [output_td]
+        )
 
         captured = {}
 
@@ -1347,7 +1350,7 @@ class TestCostModelConstraints(unittest.TestCase):
                 {sym: 1 for sym in it_space_adjusted},
                 it_space_adjusted,
                 output_td,
-                {n: 128},
+                stick_vars,
                 {},
                 32,
                 input_tds,
@@ -1439,6 +1442,66 @@ class TestCostModelConstraints(unittest.TestCase):
             (legacy_cost_with_hbm - legacy_cost_without_hbm) * _HBM_BW_GBS * 1000
         )
         self.assertAlmostEqual(legacy_bytes_total, 105_127_936, delta=1.0)
+
+        # Layer 3: the real (unmocked) function, given correct fp8 byte widths,
+        # must itself compute the correct bytes_total.
+        shared_cost_with_hbm = _matmul_split_cost(
+            (B, 1),
+            (M, sm),
+            (N, sn),
+            (K, sk),
+            32,
+            shared_weight=True,
+            operand_bytes=1.0,
+            output_bytes=2.0,
+        )
+        shared_cost_without_hbm = _matmul_split_cost(
+            (B, 1),
+            (M, sm),
+            (N, sn),
+            (K, sk),
+            32,
+            shared_weight=True,
+            include_hbm=False,
+            operand_bytes=1.0,
+            output_bytes=2.0,
+        )
+        shared_bytes_total = (
+            (shared_cost_with_hbm - shared_cost_without_hbm) * _HBM_BW_GBS * 1000
+        )
+        self.assertAlmostEqual(shared_bytes_total, 52_666_368, delta=1.0)
+
+        # Separate-batched-weight branch (weight_batches=B, not 1): B=2,
+        # M=8, K=4096, N=12800. fanout_split = n (shared_weight=False), so
+        # n=8 again keeps cohort_penalty == 1.0.
+        B2, M2, K2, N2 = 2, 8, 4096, 12800
+        m2, n2, k2 = 1, 8, 1
+        separate_cost_with_hbm = _matmul_split_cost(
+            (B2, 1),
+            (M2, m2),
+            (N2, n2),
+            (K2, k2),
+            32,
+            shared_weight=False,
+            operand_bytes=1.0,
+            output_bytes=2.0,
+        )
+        separate_cost_without_hbm = _matmul_split_cost(
+            (B2, 1),
+            (M2, m2),
+            (N2, n2),
+            (K2, k2),
+            32,
+            shared_weight=False,
+            include_hbm=False,
+            operand_bytes=1.0,
+            output_bytes=2.0,
+        )
+        separate_bytes_total = (
+            (separate_cost_with_hbm - separate_cost_without_hbm) * _HBM_BW_GBS * 1000
+        )
+        # weight_batches=B2=2 (not shared): (B2*M2*K2 + B2*K2*N2)*1 + B2*M2*N2*2
+        self.assertAlmostEqual(separate_bytes_total, 105_332_736, delta=1.0)
 
 
 class TestCoordinateMaskBlockedVars(unittest.TestCase):
