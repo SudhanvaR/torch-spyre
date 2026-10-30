@@ -16,6 +16,8 @@ Applying them in filename order works from an empty database.
 | `26-dispatch-targets.sql` | `dispatch_targets` | — |
 | `30-benchmarks.sql` | `benchmarks`, `benchmark_runs` | — |
 | `40-jenkins-agents.sql` | `jenkins_agents` | — |
+| `41-ops-requests.sql` | `ops_requests` | — |
+| `42-ci-requests.sql` | `ci_requests` | — |
 | `47-pipeline-runs.sql` | `pipeline_runs`, `pipeline_run_legs` | — |
 | `48-ci-run-timings.sql` | `ci_run_timings` | — |
 | `49-result-uploads.sql` | `result_uploads`, `v_result_uploads`, `v_artifact_results_published` | 20 |
@@ -28,6 +30,7 @@ Applying them in filename order works from an empty database.
 | `56-pipeline-run-lineage.sql` | `pipeline_run_links`, `v_pipeline_run_links`, `v_pipeline_run_links_pending`, `v_pipeline_run_edges`, `v_pipeline_run_lineage`, `v_pipeline_run_lineage_gaps` | 47, 53 |
 | `57-failure-forensics-views.sql` | `v_result_run_context`, `v_failure_fingerprint`, `v_case_run_history`, `v_failure_recurrence`, `v_failure_first_seen`, `v_failure_groups` | 10, 20, 45, 47, 53 |
 | `58-ci-event-records.sql` | `poller_decisions`, `ci_write_failures`, `merge_queue_events` | — |
+| `59-ci-request-views.sql` | `v_ci_requests`, `v_ci_cell_durations` | 20, 42, 50 |
 | `60-benchmark-views.sql` | 5 `v_benchmark_*` views | 20, 30, 50 |
 | `62-benchmark-verdicts.sql` | `benchmark_metric_policy`, `v_benchmark_metric_verdicts`, `v_benchmark_gate`, `benchmark_metric_verdicts` + its refreshable MV | 60 |
 | `63-perf-regression-gate.sql` | `v_perf_regression_gate` | 20, 62 |
